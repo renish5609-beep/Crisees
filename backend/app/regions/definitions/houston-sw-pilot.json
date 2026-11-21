@@ -1,0 +1,24 @@
+{
+  "region_id": "houston-sw-pilot",
+  "name": "Southwest Houston Pilot (Harris / Fort Bend)",
+  "description": "Bounded pilot study area in southwest Houston spanning Alief, Sharpstown, Westchase, Mission Bend, Stafford, Missouri City and east Sugar Land, across the Harris County / Fort Bend County line. Includes the Brays Bayou and Keegans Bayou watersheds, which flooded during Tropical Storm Allison (2001) and Hurricane Harvey (2017).",
+  "country": "US",
+  "state_fips": "48",
+  "state_abbr": "TX",
+  "county_fips": ["201", "157"],
+  "county_names": {"201": "Harris County", "157": "Fort Bend County"},
+  "selection_bbox": [-95.66, 29.56, -95.48, 29.72],
+  "road_buffer_m": 1000,
+  "analysis_crs": "EPSG:32615",
+  "acs_year": 2024,
+  "tiger_year": 2024,
+  "hazard": "flood",
+  "selection_rule": "Census tracts (2020 vintage, TIGER/Line 2024) whose Census internal point falls inside selection_bbox. The study-area polygon is the union of those tracts; road and facility data cover the study-area bounds plus road_buffer_m to limit edge effects.",
+  "justification": [
+    "FEMA flood hazard polygons (FIRM database, DFIRM 48157C) were retrievable for the Fort Bend portion during Phase 1; the official FEMA NFHL service is configured as the primary source for the full area.",
+    "Contains both Harris County (48201) and Fort Bend County (48157) tracts, so the multi-county data model is exercised from day one.",
+    "Dense, well-mapped OpenStreetMap road network with freeways (I-69/US-59, Beltway 8, Westpark Tollway), arterials and local streets.",
+    "Large populations with documented transportation and income barriers (Alief, Sharpstown, Gulfton edge).",
+    "Small enough (about 18 x 18 km) for fast local processing and Phase 2 routing experiments."
+  ]
+}

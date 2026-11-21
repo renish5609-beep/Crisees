@@ -1,0 +1,108 @@
+# Architecture
+
+```
+                 ┌─────────────────────────── scripts/ ───────────────────────────┐
+ public sources  │ download_data.py ─► pipeline.sources.*  (providers + fallbacks)│
+ Census, CDC,    │        │  data/raw/…  + .source.json provenance sidecars         │
+ FEMA, OSM,      │ process_data.py  ─► pipeline.processing.* ─► data/processed/   │
+ Overture ──────►│ validate_data.py ─► pipeline.validate      (GeoParquet+manifest)│
+                 └────────────────────────────────┬───────────────────────────────┘
+                                                  │ app.datasets (file contract)
+                 ┌───────────── backend/app (FastAPI) ─────────────┐
+                 │ services.repository  (mtime-cached loads, 503s) │
+                 │ services.{geography,demographics,roads,         │
+                 │          facilities,flood,summary,road_graph}   │
+                 │ api.v1.routes.regions  ── /api/v1/...           │
+                 └───────────────────────┬─────────────────────────┘
+                                         │ JSON / GeoJSON (EPSG:4326)
+                 ┌───────────── frontend (Next.js) ────────────────┐
+                 │ lib/api.ts client · StatusBar health · /data    │
+                 └─────────────────────────────────────────────────┘
+```
+
+## Principles
+
+1. **Real data or no data.** Every value traces to a source recorded in a sidecar and the manifest.
+   Missing data gives a 503 or a null, never a fabricated number. Synthetic data lives only in
+   `backend/tests/fixtures/` and is labeled `provenance: synthetic`.
+2. **One file contract.** `backend/app/datasets.py` names every processed file and its required columns.
+   The pipeline writes it, the API reads it, the validator enforces it. Phase 2 reads the same files.
+3. **Region-agnostic.** A region is a JSON definition (counties, selection bbox, analysis CRS, vintages).
+   State-level downloads are shared across regions in `data/raw/shared/state-<fips>/`.
+4. **Providers with fallbacks.** Each source module tries providers in order (official first) and records
+   which one succeeded. Swapping providers changes neither the schema nor the API.
+5. **Explicit evidence types.** FEMA regulatory zones, observed flooding and simulated closures are
+   separate concepts (`HazardEvidenceType`). Mapped facilities are never treated as designated shelters.
+
+## Backend layout
+
+```
+backend/app/
+  main.py               app factory: CORS, gzip, request logging, error handlers
+  core/config.py        Settings (env prefix CRISEES_), paths
+  core/errors.py        CriseesError hierarchy → {"error": {code, message, details}}
+  core/logging.py
+  regions/              RegionDefinition + definitions/*.json registry
+  datasets.py           processed-file contract + manifest helpers
+  schemas/              Pydantic models: common (Provenance, SourceAttribution, GeoJSON generics,
+                        pagination), region, census, roads, facilities, flood, summary
+  services/             repository, serialization, geography, demographics, roads, road_graph,
+                        facilities, flood, summary
+  api/                  deps (repo, pagination), health, v1/routes/regions.py
+backend/pipeline/
+  http.py               retrying session, atomic idempotent downloads, content guards, ArcGIS paging
+  context.py            per-region paths
+  sources/              tiger, acs, svi, fema, roads (osmnx|overture), facilities (osm|overture),
+                        overture (S3 bbox reader), catalog (attribution)
+  processing/           geoid, tracts, demographics, svi, flood, roads, facilities
+  run.py                download / process orchestration, manifest writing
+  validate.py           contract checks
+backend/tests/          97 tests; synthetic fixture; opt-in real-data checks
+```
+
+## Coordinate reference systems
+
+| Purpose | CRS |
+| --- | --- |
+| Storage, API, frontend | EPSG:4326, GeoJSON [lon, lat] |
+| Lengths, areas, buffers, nearest-node snapping | Region `analysis_crs` (EPSG:32615, UTM 15N, metres) |
+| TIGER native | EPSG:4269 (NAD83), converted on ingest |
+| ArcGIS queries | Requested with `outSR=4326` |
+
+## Road graph
+
+`road_nodes` and `road_edges` flatten an OSMnx-style `MultiDiGraph`. `tables_to_graph` rebuilds it
+losslessly; `get_road_graph(repo, region)` returns a cached instance. OSMnx and NetworkX routines work
+on it directly (`ox.graph_to_gdfs`, `ox.routing.shortest_path`, `nx.shortest_path(..., weight="length")`).
+
+## Frontend
+
+Next.js 15 App Router, TypeScript and Tailwind v4, with the Public Sans typeface (self-hosted through
+`@fontsource`). Phase 1 scope is limited to:
+
+- **App shell.** Left navigation rail with placeholders for Phase 2 and 3 sections, and a top status bar
+  that polls `/health` every 15 seconds.
+- **Workspace (`/`).** A map-ready panel. As a preview, it renders the real tract outlines and FEMA SFHA
+  polygons as SVG through a local equirectangular projection. It also shows the region summary inspector.
+  Phase 3 replaces the SVG with an interactive web map that consumes the same GeoJSON endpoints.
+- **Data status (`/data`).** The dataset inventory with sources, provenance and caveats.
+- **`src/lib/api.ts`.** A typed client with timeouts and structured `ApiError`s. `src/lib/types.ts`
+  mirrors the backend schemas.
+
+## How Phase 2 should consume the data
+
+1. Load data through `DataRepository` (or directly with `geopandas.read_parquet` from
+   `data/processed/<region>/`), and check `manifest.json` provenance and coverage before you trust a dataset.
+2. Get the routing graph with `get_road_graph(repo, region_id)`. Edge `length` is in metres. There are no
+   imputed speeds. To add travel times, use `osmnx.routing.add_edge_speeds` / `add_edge_travel_times` and
+   record the result as a derived dataset.
+3. Origins: tract population-weighted points (Phase 2 should add block-group or block points). Demand
+   inputs: `households_no_vehicle`, `population_65_plus` and `population_with_disability`, with their MOEs.
+4. Destinations: `facilities` (hospitals, social shelters) and `candidate_hubs`, using `nearest_node_id`.
+5. Flood disruption: intersect `road_edges` with `flood_hazards` in EPSG:32615 to produce **simulated**
+   closures, stored as a new dataset with `evidence_type = simulated`. Never overwrite FEMA data. Treat
+   edges outside `flood_coverage` as having unknown hazard.
+6. Vulnerability weighting: build it in Phase 2 from preserved variables. Document the weights and avoid
+   double counting SVI and ACS overlaps (vehicle access, age, disability, poverty).
+7. New outputs go through the same pattern: add a `DatasetSpec`, write with provenance `derived`, extend
+   the validator, and expose them under `/api/v1/regions/{id}/...`.
