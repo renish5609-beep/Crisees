@@ -11,7 +11,7 @@ action.
 - [x] `python scripts/validate_data.py`: 12/12 datasets valid (local data and the installed release)
 - [x] `APP_URL=https://crisees-drea7.vercel.app API_URL=https://crisees-api-drea7.vercel.app npm run e2e` passes, with no console errors
 - [x] Branch `claude/sleepy-cori-ki2xgv` pushed
-- [ ] GitHub Actions CI green. Not checked: CI results were not inspected in this session
+- [x] GitHub Actions CI green on the last code change `c83035d` (run 13). Runs 11–12 failed on the e2e-script lint issue that this commit fixed; later docs-only commits rerun the same checks
 
 ## Data release
 
