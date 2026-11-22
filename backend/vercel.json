@@ -3,7 +3,7 @@
   "framework": "fastapi",
   "functions": {
     "index.py": {
-      "excludeFiles": "{tests/**,**/pyogrio/**,**/pyogrio.libs/**,**/pandas/tests/**,**/scipy/**/tests/**,**/pyarrow/tests/**,**/pyarrow/include/**,**/pyarrow/libarrow_flight*,**/pyarrow/_flight*,**/osmnx/**}"
+      "excludeFiles": "{tests/**,.vercel/python/.venv/lib/python3.12/site-packages/pyogrio/**,.vercel/python/.venv/lib/python3.12/site-packages/pyogrio.libs/**,.vercel/python/.venv/lib/python3.12/site-packages/pyogrio-*/**,.vercel/python/.venv/lib/python3.12/site-packages/pandas/tests/**,.vercel/python/.venv/lib/python3.12/site-packages/pyarrow/tests/**,.vercel/python/.venv/lib/python3.12/site-packages/pyarrow/include/**,.vercel/python/.venv/lib/python3.12/site-packages/pyarrow/libarrow_flight*,.vercel/python/.venv/lib/python3.12/site-packages/pyarrow/_flight*,.vercel/python/.venv/lib/python3.12/site-packages/scipy/*/tests/**,.vercel/python/.venv/lib/python3.12/site-packages/scipy/*/*/tests/**,**/pyogrio/**,**/pyogrio.libs/**}"
     }
   }
 }
