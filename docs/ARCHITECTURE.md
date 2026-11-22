@@ -75,7 +75,23 @@ backend/tests/          97 tests; synthetic fixture; opt-in real-data checks
 losslessly; `get_road_graph(repo, region)` returns a cached instance. OSMnx and NetworkX routines work
 on it directly (`ox.graph_to_gdfs`, `ox.routing.shortest_path`, `nx.shortest_path(..., weight="length")`).
 
-## Frontend
+## Frontend (Phase 3)
+
+```
+src/app/page.tsx            map-first workspace: Overview, Scenario Lab, Accessibility, Planner, Impact, guided demo
+src/app/methodology/        data sources, live dataset status, model formulation, limitations
+src/components/map/         CriseesMap (MapLibre GL, canvas-generated patterns, no external sprites or glyphs)
+src/components/panels/      one panel per view plus TractInspector and MapControls
+src/lib/api.ts              typed client: timeouts (150 s for analysis), AbortSignal, zod runtime checks, ApiError
+src/lib/store.tsx           WorkspaceProvider: draft parameters (URL-persisted) and result slots with keys; latest-request-wins
+src/lib/params.ts           defaults and bounds mirroring backend params.py; URL encoding; validation
+```
+
+Results are displayed only after the corresponding API call succeeds. Each result slot records the
+parameter key it was computed for, and the UI flags stale results when inputs change. Chart-heavy panels
+and the map are lazy-loaded (first-load JS for `/` is about 135 kB).
+
+## Frontend (Phase 1, superseded)
 
 Next.js 15 App Router, TypeScript and Tailwind v4, with the Public Sans typeface (self-hosted through
 `@fontsource`). Phase 1 scope is limited to:

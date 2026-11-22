@@ -127,3 +127,26 @@ def test_analysis_endpoints_503_without_data(empty_client):
     for path, body in [("optimize", {}), ("compare", {}), ("accessibility/analyze", {}), ("scenarios/evaluate", {})]:
         r = empty_client.post(f"{R}/{path}", json=body)
         assert r.status_code == 503 and r.json()["error"]["code"] == "dataset_not_available", path
+
+
+def test_map_layers(client):
+    cov = client.get(f"{R}/layers/flood-coverage").json()
+    kinds = {f["properties"]["kind"] for f in cov["features"]}
+    assert {"study_area", "fema_covered", "no_fema_data"} <= kinds
+    assert 0 < cov["covered_area_fraction"] < 1
+    sites = client.get(f"{R}/layers/planning-sites").json()
+    assert len(sites["shelters"]["features"]) == 1 and len(sites["hubs"]["features"]) == 2
+    lon, lat = sites["shelters"]["features"][0]["geometry"]["coordinates"]
+    assert -96 < lon < -95 and 29 < lat < 30
+    assert sites["shelters"]["features"][0]["properties"]["flood_status"] == "unknown_no_fema_data"
+    roads = client.get(f"{R}/layers/context-roads").json()
+    assert roads["features"] and {f["properties"]["road_class"] for f in roads["features"]} == {"primary"}
+
+
+def test_preset_closures_survive_cache_reset(client):
+    from app.engine import service
+
+    sid = client.post(f"{R}/scenarios/evaluate", json={"scenario": "severe"}).json()["scenario_id"]
+    service.clear_caches()  # simulates a server restart
+    r = client.get(f"{R}/scenarios/{sid}/closures")
+    assert r.status_code == 200 and r.json()["page"]["total"] == 2

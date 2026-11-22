@@ -12,7 +12,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Path, Query
 
 from app.api.deps import Repo
-from app.engine import service
+from app.engine import layers, service
 from app.engine.params import (
     AccessibilityRequest,
     CompareRequest,
@@ -88,3 +88,18 @@ def methodology(region_id: RegionId) -> dict[str, Any]:
 @router.get("/demo", response_model=DemoResult, summary="Reproducible Phase 3 demonstration scenario")
 def demo(region_id: RegionId, repo: Repo) -> dict:
     return service.demo(repo, region_id)
+
+
+@router.get("/layers/context-roads", summary="Major roads for map context (self-hosted basemap substitute)")
+def context_roads(region_id: RegionId, repo: Repo) -> dict:
+    return layers.context_roads(repo, region_id)
+
+
+@router.get("/layers/flood-coverage", summary="FEMA data coverage and the explicit no-data area")
+def flood_coverage(region_id: RegionId, repo: Repo) -> dict:
+    return layers.flood_coverage(repo, region_id)
+
+
+@router.get("/layers/planning-sites", summary="Assumed shelters and eligible candidate hubs as used by the engine")
+def planning_sites(region_id: RegionId, repo: Repo) -> dict:
+    return layers.planning_sites(repo, region_id)

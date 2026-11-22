@@ -1,150 +1,152 @@
 # Crisees
 
-Equity-aware flood evacuation accessibility and intervention planning for Houston / Harris County, Texas.
+**Find the gaps. Plan the response.**
 
-Crisees helps emergency planners and community organizations see where residents without a car, or with
-other barriers, would struggle to reach evacuation resources during a flood, and where temporary pickup hubs
-and limited transport could do the most good. It is a **planning and simulation platform**, not an
-emergency dispatch system.
+Crisees is an equity-aware evacuation planning platform. It uses public demographic and geographic data,
+network analysis and mathematical optimization to help planners see where communities might struggle to
+reach evacuation assistance during a flood. It simulates hypothetical flood-related road disruptions and
+tests how limited pickup hubs, vehicles and shelter space could be allocated.
 
-![Workspace showing the study area's census tracts and FEMA floodplain](docs/img/workspace.png)
+> Crisees is a research and planning prototype. It is not an emergency warning, evacuation order, verified
+> shelter directory, or dispatch service.
 
-## Status
+![Scenario Lab: severe hypothetical flood closures over southwest Houston](docs/img/scenario-lab.png)
 
-| Phase | Scope | State |
+## The problem
+
+In a flood, households without a car depend on someone else to get out. When roads close, the places
+they could walk to for a ride may be cut off from shelters. Emergency planners have to decide, with
+limited buses and staff, where to stage temporary pickup points. Crisees makes that trade-off visible and
+testable with public data, rather than leaving it to intuition.
+
+**Who it is for:** emergency-management planners, transportation agencies and community organizations who
+plan for evacuation of transit-dependent residents. It is built for planning and exercises, not live
+operations.
+
+## What it does
+
+| Feature | What you can do |
+| --- | --- |
+| **Interactive map** (MapLibre) | Census tracts colored by need, access or plan coverage; FEMA flood zones; hatched "no FEMA data" area; simulated closures; candidate and selected hubs; assumed shelters; conceptual hub→shelter allocation lines |
+| **Scenario Lab** | Baseline, moderate or severe presets, or custom closure rules and a seed. Click roads on the map to close them. Each run executes the real routing engine on 199,542 road edges |
+| **Accessibility** | Walk access to hubs, drive routes to shelters, disconnected tracts and access lost, per tract and region-wide |
+| **Intervention Planner** | Set vehicles, seats, hub budget, shelter capacity, horizon, walking distance and equity or equal weighting, then select **Optimize response**. A MILP (HiGHS) chooses hubs and vehicle trips; solver status, gap, binding constraints and an independent constraint check are shown |
+| **Impact Analysis** | Five counterfactual cases with identical inputs: baseline; flood without intervention; flood with the equity plan; flood with the equal-weight plan; baseline hubs reused in the flood |
+| **Guided demo** | An eight-step, three-minute walkthrough that calls the real backend at every step |
+| **Data & Methodology** | Sources, live dataset status, model formulation, equity weights and limitations |
+
+### What is real and what is hypothetical
+
+| Real public data | Model estimates | Hypothetical |
 | --- | --- | --- |
-| 1 | Monorepo, FastAPI backend, real-data pipeline, data model, API, Next.js shell | **Done** |
-| 2 | Routing, demand, flood-disruption scenarios, accessibility, equity MILP, counterfactuals | **Done** |
-| 3 | Planner-facing dashboard and map UI | Not started |
+| Census tracts, population, car-free households, poverty, disability (ACS 2020–2024, TIGER 2024); CDC SVI 2020; road network (OpenStreetMap via Overture); mapped facilities; FEMA flood zones for the Fort Bend portion (about 52% of the area) | Assistance demand, travel times, walking access, selected hubs and trips | Flood road closures, participation rate (50%), vehicles, hub and shelter capacities, which facilities act as shelters |
 
-Pilot region: **`houston-sw-pilot`**, 151 census tracts (110 in Harris County, 41 in Fort Bend County),
-about 287 km² and 586,000 residents across Alief, Sharpstown, Westchase, Mission Bend, Stafford and
-Missouri City. See [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md#geographic-scope) for why this area was chosen.
+### Demonstration results (modelled, severe scenario, seed 2017)
 
-## Repository layout
+These are fetched live by the app, never hard-coded.
+
+| | Value |
+| --- | ---: |
+| Estimated persons needing assistance | 23,033 |
+| Flood, no intervention: assisted | 5,214 (22.6%) |
+| Flood + 12 optimized hubs, 15 vehicles: assisted | 9,493 (41.2%) |
+| Change | +4,279 (+18.6 percentage points) |
+| Equity vs equal weighting | Same total; coverage redistributed toward higher-priority tracts |
+
+## Stack and architecture
 
 ```
-backend/            FastAPI app (app/) and data pipeline (pipeline/), Pytest suite (tests/)
-  app/regions/definitions/   one JSON file per study region
-frontend/           Next.js (App Router, TypeScript, Tailwind) application shell
-scripts/            download_data.py, process_data.py, validate_data.py
-data/raw/           downloaded source files + .source.json provenance sidecars (git-ignored)
-data/processed/     standardized GeoParquet/Parquet + manifest.json (git-ignored)
-docs/               architecture, data sources, data dictionary, API reference
+frontend/  Next.js 15 (App Router) · TypeScript · Tailwind v4 · MapLibre GL · Recharts · Lucide · zod
+           └─ typed API client (timeouts, cancellation, stale-response protection, runtime validation)
+backend/   FastAPI · Pydantic · GeoPandas · Shapely · SciPy (Dijkstra + HiGHS MILP) · NetworkX · OSMnx
+           ├─ app/        API, schemas, services, analysis engine (app/engine)
+           └─ pipeline/   reproducible data download, processing and validation
+scripts/   download / process / validate data · package and fetch data releases · Phase 2 benchmark
+docs/      architecture, data sources, data dictionary, API, methods, results, submission and deployment
 ```
 
-## Quick start
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-Requirements: Python 3.11+, Node.js 20+ (tested with Python 3.13 and Node 22).
+## Run it locally
 
-### 1. Backend
+Requirements: Python 3.11+ and Node 20+.
 
 ```bash
-cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-cp .env.example .env    # optional; defaults work for local development
+cd backend && python -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
 ```
 
-### 2. Data (about 70 MB of downloads, 3 to 5 minutes)
-
-From the repository root:
+Then get the data. Either install the published data release (fast, checksum verified):
 
 ```bash
-python scripts/download_data.py --region houston-sw-pilot
-python scripts/process_data.py --region houston-sw-pilot
-python scripts/validate_data.py --region houston-sw-pilot
+CRISEES_DATA_URL=<release asset URL> CRISEES_DATA_SHA256=<sha256> python scripts/fetch_data_release.py
 ```
 
-Downloads are cached: rerunning skips anything already on disk with a provenance sidecar.
-Add `--force` to refresh, or `--only roads facilities` to fetch a subset. Each source has an ordered list of
-providers and falls back automatically (for example OSMnx/Overpass, then Overture Maps for roads). The
-provider actually used is recorded in `data/processed/<region>/manifest.json`.
-
-Phase 2 adds a `derived` step (vehicle access by household size, road flood exposure), which
-`process_data.py` runs automatically.
-
-### 3. Run the API
+Or rebuild it from public sources (about 5 minutes):
 
 ```bash
-cd backend
-uvicorn app.main:app --reload --port 8000
+python scripts/download_data.py && python scripts/process_data.py && python scripts/validate_data.py
 ```
 
-Open http://localhost:8000/docs for interactive OpenAPI docs. Health check: http://localhost:8000/health.
-
-### 4. Run the frontend
+Start the API:
 
 ```bash
-cd frontend
-npm install
-cp .env.example .env.local   # optional; points at http://localhost:8000 by default
-npm run dev
+cd backend && uvicorn app.main:app --port 8000
 ```
 
-Open http://localhost:3000. The status pill in the top bar shows whether the API is reachable, and
-**Data status** lists every dataset with its source and caveats.
-
-## Tests and checks
+Start the frontend:
 
 ```bash
-cd backend && python -m pytest          # 155 tests; real-data checks skip if data not generated
-python scripts/benchmark_phase2.py       # Phase 2 timings + demonstration results
-cd frontend && npm run typecheck && npm run lint && npm run build
+cd frontend && npm install && cp .env.example .env.local && npm run dev
 ```
 
-The backend tests run without network access. They use a clearly labeled synthetic fixture
-(`backend/tests/fixtures/synthetic.py`) that the pipeline marks with `provenance: "synthetic"`.
+Open http://localhost:3000 and select **Run guided demo**.
 
-## Environment variables
+## Testing
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `CRISEES_DATA_DIR` | `../data` (relative to `backend/`) | Root holding `raw/` and `processed/` |
-| `CRISEES_CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Allowed browser origins |
-| `CRISEES_LOG_LEVEL` | `INFO` | Python log level |
-| `CRISEES_DEFAULT_PAGE_SIZE` / `CRISEES_MAX_PAGE_SIZE` | `500` / `5000` | API pagination bounds |
-| `CENSUS_API_KEY` | unset | Optional. Uses the Census Data API instead of the ACS Summary File |
-| `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8000` | Frontend → backend URL |
-| `NEXT_PUBLIC_DEFAULT_REGION` | `houston-sw-pilot` | Region shown by the frontend |
+```bash
+cd backend && python -m pytest                 # 157 tests: algorithms, API contracts, real-data end to end
+cd frontend && npm run typecheck && npm run lint && npm test && npm run build
+cd frontend && npm run e2e                     # Playwright browser test against running servers
+python scripts/benchmark_phase2.py             # performance + demonstration numbers
+```
 
-No secrets are required. Never commit `.env` files.
+The browser test checks that the numbers the UI displays match direct API responses.
+
+## Deployment
+
+The backend runs as a Docker service (Render blueprint in `render.yaml`, about 1 GB RAM). Data is
+provisioned at startup from a versioned, SHA-256-verified release artifact, so no datasets are stored in
+Git. The frontend deploys to Vercel with `NEXT_PUBLIC_API_BASE_URL` set. See
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+## Data provenance
+
+Every dataset records its source, retrieval time, provider and checksum (`data/processed/*/manifest.json`
+and `.source.json` sidecars). Several primary sources were unreachable from the build environment, so
+documented mirrors and fallbacks were used. See [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md).
+
+## Limitations
+
+- FEMA flood data covers about 52% of the study area (Fort Bend). Harris County disruption is a lower bound,
+  and uncovered areas are shown as **unknown**, not safe.
+- Flood closures, participation, fleet and capacities are hypothetical planning assumptions.
+- Mapped facilities are not verified shelters. Schools and private properties need owner authorization.
+- Walking access uses the road network as a proxy for sidewalks. Travel times are mostly road-class
+  free-flow estimates (only 6% of edges have posted speeds).
+- The vehicle model is a fleet-time capacity approximation, not vehicle routing or scheduling.
+- Results are modelled outcomes, not demonstrated real-world impact.
 
 ## Documentation
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): system design, conventions, how Phase 2 plugs in
-- [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md): every source, license, retrieval method, fallback and limitation
-- [docs/DATA_DICTIONARY.md](docs/DATA_DICTIONARY.md): every processed dataset and field
-- [docs/API.md](docs/API.md): endpoint reference with examples
-- [docs/OPTIMIZATION_MODEL.md](docs/OPTIMIZATION_MODEL.md): MILP formulation, equity weights, solver settings
-- [docs/SCENARIO_ENGINE.md](docs/SCENARIO_ENGINE.md): hypothetical flood-closure rules, determinism
-- [docs/ACCESSIBILITY_METHODS.md](docs/ACCESSIBILITY_METHODS.md): routing, travel time, demand, accessibility
-- [docs/PHASE2_RESULTS.md](docs/PHASE2_RESULTS.md): demonstration scenario, numbers, performance
-
-## Phase 2 at a glance
-
-```bash
-curl -s localhost:8000/api/v1/regions/houston-sw-pilot/demo | jq '.result.findings'
-```
-
-In the severe hypothetical scenario, 12 optimized pickup hubs and 15 vehicles raise modelled assisted
-evacuation from 5,214 to 9,493 of 23,033 estimated persons. 8,790 persons have no hub or shelter within
-800 m, which limits what any allocation can do. Every solution is verified against all constraints. See
-[docs/PHASE2_RESULTS.md](docs/PHASE2_RESULTS.md).
-
-## Known limitations (summary)
-
-- FEMA flood zones currently cover only the Fort Bend part of the pilot (52% of the area). The official
-  FEMA NFHL service is wired in as the primary source but was unreachable from the build environment.
-- Roads and facilities came from Overture Maps (OpenStreetMap-derived) because the Overpass API was
-  unreachable. On a normal network, the pipeline uses OSMnx first.
-- SVI is the 2020 edition (ACS 2016–2020), via an ArcGIS Online copy. ACS indicators are 2020–2024.
-- No facility is a verified evacuation shelter. Open data cannot establish that.
-
-Full details are in [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md#known-limitations).
+[Architecture](docs/ARCHITECTURE.md) · [Data sources](docs/DATA_SOURCES.md) ·
+[Data dictionary](docs/DATA_DICTIONARY.md) · [API](docs/API.md) ·
+[Optimization model](docs/OPTIMIZATION_MODEL.md) · [Scenario engine](docs/SCENARIO_ENGINE.md) ·
+[Accessibility methods](docs/ACCESSIBILITY_METHODS.md) · [Phase 2 results](docs/PHASE2_RESULTS.md) ·
+[Deployment](docs/DEPLOYMENT.md) · [Demo script](docs/DEMO_SCRIPT.md) ·
+[Devpost submission](docs/DEVPOST_SUBMISSION.md) · [Release checklist](docs/RELEASE_CHECKLIST.md)
 
 ## Attribution
 
-Contains information from OpenStreetMap contributors (ODbL 1.0) via Overture Maps Foundation, Overture
-Maps places data (CDLA-Permissive-2.0), U.S. Census Bureau TIGER/Line and American Community Survey data,
-CDC/ATSDR Social Vulnerability Index data, and FEMA flood hazard data.
+Contains U.S. Census Bureau TIGER/Line and ACS data, CDC/ATSDR SVI data and FEMA flood hazard data.
+It also contains OpenStreetMap data (© OpenStreetMap contributors, ODbL 1.0) and Overture Maps data
+(CDLA-Permissive-2.0). Basemap tiles © CARTO.

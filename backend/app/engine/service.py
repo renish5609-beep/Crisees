@@ -217,6 +217,12 @@ def evaluate_scenario(repo: DataRepository, region_id: str, req: ScenarioEvaluat
 
 def closures_geojson(repo: DataRepository, region_id: str, sid: str, limit: int, offset: int) -> dict:
     entry = _scenarios.get(sid)
+    if entry is None:  # survive restarts for presets: their ids are deterministic
+        eng0 = get_engine(repo, region_id)
+        for spec in PRESETS.values():
+            if scenario_id(region_id, eng0.stamp, spec) == sid:
+                entry = {"region_id": region_id, "spec": spec}
+                _scenarios[sid] = entry
     if entry is None or entry["region_id"] != region_id:
         raise ScenarioNotFoundError(
             f"Scenario '{sid}' is not known. Evaluate it first with POST /scenarios/evaluate.", scenario_id=sid)

@@ -28,10 +28,11 @@ def main() -> int:
     p.add_argument("--force", action="store_true", help="Re-download even if cached")
     p.add_argument("--road-provider", choices=["auto", "osmnx", "overture"], default="auto")
     p.add_argument("--facility-provider", choices=["auto", "osm", "overture"], default="auto")
+    p.add_argument("--flood-provider", choices=["auto", "fema_official", "fema_mirror_48157C"], default="auto")
     args = p.parse_args()
     configure_logging(get_settings().log_level)
     ctx = PipelineContext.for_region(args.region, force=args.force)
-    reports = download(ctx, tuple(args.only or STEPS), args.road_provider, args.facility_provider)
+    reports = download(ctx, tuple(args.only or STEPS), args.road_provider, args.facility_provider, args.flood_provider)
     print(json.dumps(reports, indent=2, default=str))
     failed = [r for r in reports if r["status"] != "ok"]
     if failed:

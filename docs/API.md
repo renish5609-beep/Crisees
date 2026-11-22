@@ -217,6 +217,16 @@ equity-weight formula.
 The reproducible demonstration: `{title, story[], request, reproduce, result: ComparisonResult}`. See
 PHASE2_RESULTS.md.
 
+### Map layer endpoints (Phase 3, read-only)
+
+| Endpoint | Returns |
+| --- | --- |
+| `GET /api/v1/regions/{id}/layers/context-roads` | Major roads merged by name and class, simplified (about 430 features), as a self-hosted basemap substitute |
+| `GET /api/v1/regions/{id}/layers/flood-coverage` | FeatureCollection with `kind` = `study_area`, `fema_covered` (per DFIRM) or `no_fema_data` (study area minus coverage: hazard unknown), plus `covered_area_fraction` |
+| `GET /api/v1/regions/{id}/layers/planning-sites` | `{shelters, hubs}` FeatureCollections exactly as the engine uses them (assumed shelters excluding 1% zones; candidate hubs excluding shelter facilities), each with `flood_status` |
+
+`GET /scenarios/{scenario_id}/closures` also resolves preset scenario ids after a server restart.
+
 ## Stability for Phase 2
 
 Paths, parameter names and response field names under `/api/v1` are the contract for Phase 2 and Phase 3. New fields may

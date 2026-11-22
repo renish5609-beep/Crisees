@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     cors_origins: list[str] | str = Field(
         default=["http://localhost:3000", "http://127.0.0.1:3000"]
     )
+    cors_origin_regex: str | None = Field(
+        default=None, description="Optional regex for extra allowed origins, e.g. Vercel preview URLs"
+    )
     default_page_size: int = Field(default=500, ge=1)
     max_page_size: int = Field(default=5000, ge=1)
 

@@ -46,13 +46,15 @@ def fema_metadata(ctx: PipelineContext) -> dict:
     return read_sidecar(hazard_path(ctx))
 
 
-def download_flood(ctx: PipelineContext, bbox: tuple[float, float, float, float]) -> tuple[Path, Path]:
+def download_flood(ctx: PipelineContext, bbox: tuple[float, float, float, float], provider: str = "auto") -> tuple[Path, Path]:
     hz, pn = hazard_path(ctx), panel_path(ctx)
     if is_cached(hz) and is_cached(pn) and not ctx.force:
         logger.info("cached: %s, %s", hz.name, pn.name)
         return hz, pn
     errors = []
     for name, cfg in PROVIDERS.items():
+        if provider not in ("auto", name):
+            continue
         try:
             hazards = list(arcgis_query(cfg["hazard"], envelope=bbox, out_fields="*"))
             panels = list(arcgis_query(cfg["panels"], envelope=bbox, out_fields="*"))

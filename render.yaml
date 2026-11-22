@@ -1,0 +1,28 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# The API needs ~1 GB RAM at steady state; use the "standard" plan (2 GB) or larger.
+services:
+  - type: web
+    name: crisees-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    plan: standard
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: CRISEES_ENV
+        value: production
+      - key: CRISEES_LOG_LEVEL
+        value: INFO
+      - key: CRISEES_CORS_ORIGINS
+        sync: false   # e.g. https://crisees.vercel.app
+      - key: CRISEES_CORS_ORIGIN_REGEX
+        sync: false   # e.g. ^https://crisees-.*\.vercel\.app$
+      - key: CRISEES_DATA_URL
+        sync: false   # GitHub Release asset URL of crisees-data-houston-sw-pilot-*.tar.gz
+      - key: CRISEES_DATA_SHA256
+        sync: false   # contents of the matching .sha256 file
+    disk:
+      name: crisees-data
+      mountPath: /data
+      sizeGB: 1

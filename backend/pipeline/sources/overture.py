@@ -26,7 +26,14 @@ def _fs():  # type: ignore[no-untyped-def]
 
 
 def latest_release() -> str:
+    """Newest release, unless CRISEES_OVERTURE_RELEASE pins one (reproducible builds)."""
+    import os
+
     import pyarrow.fs as pafs
+
+    pinned = os.environ.get("CRISEES_OVERTURE_RELEASE")
+    if pinned:
+        return pinned
 
     try:
         infos = _fs().get_file_info(pafs.FileSelector(f"{BUCKET}/release/", recursive=False))

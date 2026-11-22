@@ -47,7 +47,7 @@ def _study_area_from_raw(ctx: PipelineContext) -> tuple[gpd.GeoDataFrame, gpd.Ge
 
 # --------------------------------------------------------------------- download
 def download(ctx: PipelineContext, steps: tuple[str, ...] = STEPS, road_provider: str = "auto",
-             facility_provider: str = "auto") -> list[StepReport]:
+             facility_provider: str = "auto", flood_provider: str = "auto") -> list[StepReport]:
     reports: list[StepReport] = []
 
     def run(name: str, fn: Callable[[], Any]) -> None:
@@ -74,7 +74,7 @@ def download(ctx: PipelineContext, steps: tuple[str, ...] = STEPS, road_provider
             if name in steps:
                 reports.append(StepReport(step=name, status="skipped", error="tract boundaries unavailable"))
         return reports
-    run("flood", lambda: fema.download_flood(ctx, bbox))
+    run("flood", lambda: fema.download_flood(ctx, bbox, flood_provider))
     run("roads", lambda: road_src.download_roads(ctx, bbox, road_provider))
     run("facilities", lambda: fac_src.download_facilities(ctx, bbox, facility_provider))
     if "derived" in steps:
