@@ -36,3 +36,6 @@ include = ["app*", "pipeline*"]
 testpaths = ["tests"]
 addopts = "-ra"
 filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.vercel.scripts]
+build = "python vercel_build.py"

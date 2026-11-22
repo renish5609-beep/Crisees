@@ -3,7 +3,7 @@
   "framework": "fastapi",
   "functions": {
     "index.py": {
-      "excludeFiles": "{tests/**,.vercel/python/.venv/lib/python3.12/site-packages/{pyogrio,pyogrio.libs,pandas/tests,pyarrow/tests,pyarrow/include,scipy/*/tests}/**}"
+      "excludeFiles": "{tests/**,vercel_build.py}"
     }
   }
 }
