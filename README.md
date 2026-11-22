@@ -72,7 +72,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 Requirements: Python 3.11+ and Node 20+.
 
 ```bash
-cd backend && python -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
+cd backend && python -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"   # includes pipeline + server extras
 ```
 
 Then get the data. Either install the published data release (fast, checksum verified):

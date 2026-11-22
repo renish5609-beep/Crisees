@@ -13,7 +13,7 @@ WORKDIR /app
 COPY backend/pyproject.toml backend/pyproject.toml
 COPY backend/app backend/app
 COPY backend/pipeline backend/pipeline
-RUN pip install --upgrade pip && pip install ./backend
+RUN pip install --upgrade pip && pip install "./backend[pipeline,server]"
 COPY scripts scripts
 COPY backend/docker-entrypoint.sh /usr/local/bin/crisees-entrypoint
 RUN chmod +x /usr/local/bin/crisees-entrypoint && mkdir -p /data && useradd --create-home --uid 10001 crisees \

@@ -1,4 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "fastapi"
+  "framework": "fastapi",
+  "functions": {
+    "index.py": {
+      "excludeFiles": "{tests/**,**/pyogrio/**,**/pyogrio.libs/**,**/pandas/tests/**,**/scipy/**/tests/**,**/pyarrow/tests/**,**/pyarrow/include/**,**/pyarrow/libarrow_flight*,**/pyarrow/_flight*,**/osmnx/**}"
+    }
+  }
 }
