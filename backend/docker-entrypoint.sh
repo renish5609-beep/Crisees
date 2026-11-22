@@ -9,6 +9,13 @@
 set -e
 cd "${APP_DIR:-/app}"
 REGION="${CRISEES_REGION:-houston-sw-pilot}"
+# A platform disk mounted at runtime may not be writable by the non-root user;
+# fall back to an app-local directory (re-provisioned on restart) instead of failing.
+if ! ( mkdir -p "$CRISEES_DATA_DIR/processed" && touch "$CRISEES_DATA_DIR/.write-test" && rm -f "$CRISEES_DATA_DIR/.write-test" ) 2>/dev/null; then
+  echo "WARNING: $CRISEES_DATA_DIR is not writable; using ${APP_DIR:-/app}/data-local instead"
+  export CRISEES_DATA_DIR="${APP_DIR:-/app}/data-local"
+  mkdir -p "$CRISEES_DATA_DIR/processed"
+fi
 MANIFEST="$CRISEES_DATA_DIR/processed/$REGION/manifest.json"
 
 if [ -n "$CRISEES_DATA_URL" ]; then
