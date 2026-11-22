@@ -1,0 +1,89 @@
+name: Export Crisees Devpost JPEGs
+
+on:
+  push:
+    branches:
+      - "claude/sleepy-cori-ki2xgv"
+    paths:
+      - ".github/workflows/export-devpost-jpegs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Crisees
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Convert genuine app captures to JPEG
+        run: |
+          python -m pip install --quiet Pillow
+          mkdir -p dist/devpost-jpegs
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageOps, ImageDraw, ImageFont
+
+          source = Path("docs/img")
+          output = Path("dist/devpost-jpegs")
+          files = sorted(source.glob("*.png"))
+          if len(files) != 8:
+              raise SystemExit(f"Expected 8 committed app screenshots, found {len(files)}")
+
+          converted = []
+          for index, path in enumerate(files, start=1):
+              image = Image.open(path).convert("RGB")
+              target = output / f"{index:02d}-{path.stem}.jpg"
+              image.save(target, "JPEG", quality=94, optimize=True, progressive=True, subsampling=0)
+              converted.append((path.stem.replace("-", " ").title(), target))
+
+          # Ninth deliverable: a gallery overview, clearly distinct from the eight individual captures.
+          cell_w, cell_h = 640, 400
+          margin, gap, header_h = 36, 22, 100
+          sheet = Image.new("RGB", (3 * cell_w + 4 * margin + 2 * gap,
+                                    3 * cell_h + 4 * margin + 2 * gap + header_h),
+                            "#0b1722")
+          draw = ImageDraw.Draw(sheet)
+          try:
+              title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 42)
+              label_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
+          except OSError:
+              title_font = ImageFont.load_default()
+              label_font = ImageFont.load_default()
+          draw.text((margin, 25), "Crisees | Application Gallery", fill="#f2f5f7", font=title_font)
+          draw.text((margin, 78), "Eight genuine application captures", fill="#9eb0bf", font=label_font)
+
+          for i, (label, path) in enumerate(converted):
+              row, col = divmod(i, 3)
+              x = margin + col * (cell_w + gap)
+              y = header_h + margin + row * (cell_h + gap)
+              im = Image.open(path).convert("RGB")
+              thumb = ImageOps.fit(im, (cell_w, cell_h - 42), method=Image.Resampling.LANCZOS)
+              sheet.paste(thumb, (x, y))
+              draw.rectangle((x, y, x + cell_w - 1, y + cell_h - 1), outline="#334b5c", width=2)
+              draw.text((x + 10, y + cell_h - 34), label, fill="#f2f5f7", font=label_font)
+
+          sheet.save(output / "09-gallery-overview.jpg", "JPEG", quality=93, optimize=True, progressive=True)
+          PY
+
+      - name: Package JPEGs
+        run: |
+          cd dist
+          zip -qr crisees-devpost-jpegs.zip devpost-jpegs
+
+      - name: Upload JPEG deliverables
+        uses: actions/upload-artifact@v4
+        with:
+          name: crisees-devpost-jpegs
+          path: |
+            dist/devpost-jpegs/*.jpg
+            dist/crisees-devpost-jpegs.zip
+          if-no-files-found: error
+          retention-days: 7
