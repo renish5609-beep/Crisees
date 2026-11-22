@@ -15,7 +15,8 @@ export interface LayerToggles {
 }
 
 export const DEFAULT_LAYERS: LayerToggles = {
-  basemap: true, roads: true, tracts: true, floodZones: true, coverage: true, closures: true,
+  basemap: Boolean((process.env.NEXT_PUBLIC_BASEMAP_TILES ?? "").trim()) && !["none", "off", "false"].includes((process.env.NEXT_PUBLIC_BASEMAP_TILES ?? "").trim().toLowerCase()),
+  roads: true, tracts: true, floodZones: true, coverage: true, closures: true,
   candidateHubs: false, shelters: true, selectedHubs: true, allocations: true,
 };
 

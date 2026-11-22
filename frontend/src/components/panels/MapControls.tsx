@@ -2,7 +2,7 @@
 
 import { Layers } from "lucide-react";
 import { useState } from "react";
-import type { LayerToggles } from "@/components/map/config";
+import { DEFAULT_LAYERS, type LayerToggles } from "@/components/map/config";
 import { RAMPS, THEMES, type ThemeId, themeById } from "@/lib/themes";
 
 const LAYER_LABELS: { key: keyof LayerToggles; label: string; swatch: React.ReactNode }[] = [
@@ -45,7 +45,7 @@ export function LayerMenu({ layers, onChange }: { layers: LayerToggles; onChange
       </button>
       {open && (
         <div id="layer-menu" className="crisees-in absolute right-0 z-20 mt-1 w-64 rounded-lg border border-rule bg-panel/95 p-2 shadow-xl backdrop-blur">
-          {LAYER_LABELS.map(({ key, label, swatch }) => (
+          {LAYER_LABELS.filter(({ key }) => key !== "basemap" || DEFAULT_LAYERS.basemap).map(({ key, label, swatch }) => (
             <label key={key} className="flex cursor-pointer items-center gap-2.5 rounded px-2 py-1.5 text-sm hover:bg-raised">
               <input type="checkbox" checked={layers[key]} onChange={(e) => onChange({ ...layers, [key]: e.target.checked })}
                 className="accent-[#63b4d6]" />

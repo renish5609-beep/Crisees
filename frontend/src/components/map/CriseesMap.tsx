@@ -13,8 +13,12 @@ import { hatchImage, squareIcon } from "./patterns";
 export type { EdgeFeature, LayerToggles };
 
 
-const BASEMAP_TILES = process.env.NEXT_PUBLIC_BASEMAP_TILES ?? "https://a.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}@2x.png";
-const BASEMAP_ATTRIBUTION = process.env.NEXT_PUBLIC_BASEMAP_ATTRIBUTION ?? "© OpenStreetMap contributors © CARTO";
+// External raster tiles are opt-in (many free providers now require API keys).
+// Without them the map uses the self-hosted major-roads layer for context.
+const RAW_TILES = (process.env.NEXT_PUBLIC_BASEMAP_TILES ?? "").trim();
+export const BASEMAP_TILES = RAW_TILES && !["none", "off", "false"].includes(RAW_TILES.toLowerCase()) ? RAW_TILES : "";
+const BASEMAP_ATTRIBUTION = process.env.NEXT_PUBLIC_BASEMAP_ATTRIBUTION ?? "";
+const DATA_ATTRIBUTION = "Roads © OpenStreetMap contributors (ODbL) via Overture Maps · U.S. Census Bureau · FEMA · CDC/ATSDR";
 const STUDY_BOUNDS: [number, number, number, number] = [-95.66523, 29.549161, -95.474078, 29.729579];
 const EMPTY = { type: "FeatureCollection" as const, features: [] };
 
@@ -71,17 +75,19 @@ export default function CriseesMap(props: Props) {
         container: container.current,
         style: {
           version: 8,
-          sources: {
-            basemap: { type: "raster", tiles: [BASEMAP_TILES], tileSize: 256, attribution: BASEMAP_ATTRIBUTION, maxzoom: 19 },
-          },
+          sources: BASEMAP_TILES
+            ? { basemap: { type: "raster", tiles: [BASEMAP_TILES], tileSize: 256, attribution: BASEMAP_ATTRIBUTION, maxzoom: 19 } }
+            : {},
           layers: [
             { id: "bg", type: "background", paint: { "background-color": "#0c1822" } },
-            { id: "basemap", type: "raster", source: "basemap", paint: { "raster-opacity": 0.85, "raster-saturation": -0.3 } },
+            ...(BASEMAP_TILES
+              ? [{ id: "basemap", type: "raster" as const, source: "basemap", paint: { "raster-opacity": 0.85, "raster-saturation": -0.3 } }]
+              : []),
           ],
         },
         bounds: STUDY_BOUNDS,
         fitBoundsOptions: { padding: 40 },
-        attributionControl: { compact: true },
+        attributionControl: { compact: true, customAttribution: DATA_ATTRIBUTION },
         dragRotate: false,
         pitchWithRotate: false,
       });

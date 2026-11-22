@@ -18,6 +18,7 @@ const eslintConfig = [
       "out/**",
       "build/**",
       "next-env.d.ts",
+      "e2e/**", // Node CommonJS browser-test scripts (Playwright), not app code
     ],
   },
 ];
