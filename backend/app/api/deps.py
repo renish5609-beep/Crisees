@@ -11,7 +11,27 @@ from app.services.repository import DataRepository
 
 @lru_cache
 def _repository() -> DataRepository:
-    return DataRepository(get_settings())
+    settings = get_settings()
+    _provision_data(settings)
+    return DataRepository(settings)
+
+
+def _provision_data(settings: Settings) -> None:
+    """If CRISEES_DATA_URL/SHA256 are set and the data is missing (e.g. a fresh
+    serverless instance with an empty /tmp), install the release once. Failures
+    are logged; data endpoints then return 503 rather than invented values."""
+    if not (settings.data_url and settings.data_sha256):
+        return
+    import logging
+
+    from app.regions import load_regions
+    from pipeline.release import ReleaseError, install_release
+
+    for region in load_regions():
+        try:
+            install_release(settings, region, settings.data_url, settings.data_sha256)
+        except ReleaseError as exc:
+            logging.getLogger("crisees.data").error("data release not installed: %s", exc)
 
 
 def get_repository() -> DataRepository:
