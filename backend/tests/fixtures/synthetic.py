@@ -33,17 +33,23 @@ STEP = 0.01  # degrees (~1 km)
 GEOIDS = ["48201990100", "48201990200", "48157990300", "48157990400"]
 
 
+# Tract boxes split the 3x3 street grid at 0.75 steps so no street midpoint
+# falls exactly on a tract boundary.
+_SPLITS = [(-0.5, 0.75), (0.75, 2.5)]
+
+
 def synthetic_tracts() -> gpd.GeoDataFrame:
     rows, geoms = [], []
     for i, g in enumerate(GEOIDS):
-        x0 = ORIGIN[0] + (i % 2) * STEP
-        y0 = ORIGIN[1] + (i // 2) * STEP
-        geoms.append(box(x0, y0, x0 + STEP, y0 + STEP))
+        (ax, bx), (ay, by) = _SPLITS[i % 2], _SPLITS[i // 2]
+        x0, x1 = ORIGIN[0] + ax * STEP, ORIGIN[0] + bx * STEP
+        y0, y1 = ORIGIN[1] + ay * STEP, ORIGIN[1] + by * STEP
+        geoms.append(box(x0, y0, x1, y1))
         rows.append({
             "geoid": g, "state_fips": g[:2], "county_fips": g[2:5], "tract_code": g[5:],
             "name": f"Synthetic Tract {i + 1}", "county_name": "Synthetic County",
             "land_area_m2": 1.0e6, "water_area_m2": 0.0,
-            "intpt_lon": x0 + STEP / 2, "intpt_lat": y0 + STEP / 2,
+            "intpt_lon": (x0 + x1) / 2, "intpt_lat": (y0 + y1) / 2,
             "tiger_year": 2024, "source_id": "synthetic-fixture",
         })
     return gpd.GeoDataFrame(rows, geometry=geoms, crs=4326)
@@ -68,7 +74,10 @@ def synthetic_acs_tables(geoids: list[str]) -> dict[str, pd.DataFrame]:
     return {
         "B01003": table("B01003", 1, {1: pop}),
         "B01001": table("B01001", 49, b01001_vals),
-        "B08201": table("B08201", 30, {1: np.array([400, 800, 0, 300]), 2: np.array([40, 200, 0, 30])}),
+        # No-vehicle households by size: lines 008/014/020/026 sum to line 002.
+        "B08201": table("B08201", 30, {1: np.array([400, 800, 0, 300]), 2: np.array([40, 200, 0, 30]),
+                                       8: np.array([10, 50, 0, 30]), 14: np.array([10, 50, 0, 0]),
+                                       20: np.array([10, 50, 0, 0]), 26: np.array([10, 50, 0, 0])}),
         "C17002": table("C17002", 8, {
             1: np.array([1000, 2000, 500, -666666666]),
             2: np.array([50, 100, 25, 10]), 3: np.array([50, 300, 25, 10]),
@@ -141,14 +150,15 @@ def write_synthetic_region(processed_root: Path, skip: tuple[str, ...] = ()) -> 
     nodes, edges = graph_to_tables(synthetic_graph())
     save("road_nodes", nodes)
     save("road_edges", edges)
+    fac_pts = [(-95.595, 29.625), (-95.585, 29.635), (-95.592, 29.632), (-95.5802, 29.6398)]
     fac = gpd.GeoDataFrame({
-        "facility_id": ["syn-1", "syn-2", "syn-3"], "name": ["Synthetic Library", "Synthetic Hospital",
-                                                             "Synthetic School"],
-        "category": ["library", "hospital", "school"], "source_category": ["synthetic"] * 3,
-        "lon": [-95.595, -95.585, -95.592], "lat": [29.625, 29.635, 29.632], "address": [None] * 3,
-        "verification_status": ["mapped_unverified"] * 3, "is_designated_evacuation_shelter": [None] * 3,
-        "source_id": ["synthetic-fixture"] * 3, "source_record_id": ["1", "2", "3"], "confidence": [None] * 3,
-    }, geometry=[Point(-95.595, 29.625), Point(-95.585, 29.635), Point(-95.592, 29.632)], crs=4326)
+        "facility_id": ["syn-1", "syn-2", "syn-3", "syn-4"],
+        "name": ["Synthetic Library", "Synthetic Hospital", "Synthetic School", "Synthetic Community Center"],
+        "category": ["library", "hospital", "school", "community_centre"], "source_category": ["synthetic"] * 4,
+        "lon": [p[0] for p in fac_pts], "lat": [p[1] for p in fac_pts], "address": [None] * 4,
+        "verification_status": ["mapped_unverified"] * 4, "is_designated_evacuation_shelter": [None] * 4,
+        "source_id": ["synthetic-fixture"] * 4, "source_record_id": ["1", "2", "3", "4"], "confidence": [None] * 4,
+    }, geometry=[Point(*p) for p in fac_pts], crs=4326)
     save("facilities", fac)
     hubs = gpd.GeoDataFrame({
         "hub_id": ["hub-syn-1", "hub-syn-3"], "facility_id": ["syn-1", "syn-3"],
@@ -168,4 +178,9 @@ def write_synthetic_region(processed_root: Path, skip: tuple[str, ...] = ()) -> 
     save("flood_hazards", fz)
     cov = gpd.GeoDataFrame({"dfirm_id": ["48157C"]}, geometry=[box(-95.60, 29.62, -95.58, 29.63)], crs=4326)
     save("flood_coverage", cov, extra={"covered_area_fraction": 0.5, "dfirm_ids": ["48157C"], "method": "synthetic"})
+    from pipeline.processing.exposure import edge_flood_exposure, vehicle_access
+
+    b08201 = synthetic_acs_tables(GEOIDS)["B08201"]
+    save("vehicle_access", vehicle_access(b08201, GEOIDS, "synthetic-fixture"))
+    save("edge_flood_exposure", edge_flood_exposure(edges, fz, cov, "EPSG:32615"))
     return out

@@ -48,10 +48,11 @@ def test_flood_hazards_clip_and_fields(tmp_path):
 
 
 def test_flood_coverage_clipped_to_dfirm_county(tmp_path):
-    tracts = synthetic_tracts()  # 2 Harris (48201) + 2 Fort Bend (48157) squares
+    tracts = synthetic_tracts()  # 2 Harris (48201) boxes below 2 Fort Bend (48157) boxes
     p = _geojson(tmp_path, "pan.geojson", [{"DFIRM_ID": "48157C"}], [box(-96, 29, -95, 30)])
     cov, stats = process_coverage(p, tracts.geometry.union_all(), "EPSG:32615", tracts)
-    assert stats["covered_area_fraction"] == pytest.approx(0.5, abs=0.01)
+    # Fort Bend boxes span 1.75 of the 3.0 grid steps of latitude.
+    assert stats["covered_area_fraction"] == pytest.approx(1.75 / 3.0, abs=0.01)
     assert stats["dfirm_ids"] == ["48157C"]
 
 

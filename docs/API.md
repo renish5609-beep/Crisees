@@ -7,7 +7,8 @@ Base URL (local): `http://localhost:8000`. Interactive OpenAPI docs: `/docs`; sc
   and `offset`. Each response carries
   `page: {total, limit, offset, returned, next_offset}`. `next_offset` is null on the last page.
 - Each data response carries `provenance` (`real`, `derived` or `synthetic`) and `sources[]`.
-- The API is read-only (`GET`). CORS allows the origins in `CRISEES_CORS_ORIGINS`.
+- Phase 1 data endpoints are `GET`. Phase 2 analysis endpoints are `POST` with JSON bodies. CORS allows
+  `GET`, `POST` and `OPTIONS` from `CRISEES_CORS_ORIGINS`.
 
 ## Errors
 
@@ -24,6 +25,10 @@ Every error has the same shape:
 | 422 | `validation_error` | Parameter type or pattern violations (`details.errors`) |
 | 500 | `dataset_corrupt` | Processed file unreadable or missing required columns |
 | 503 | `dataset_not_available` | Dataset not yet downloaded or processed. `details.hint` gives the commands |
+| 400 | `unknown_scenario_preset` / `unknown_edge_ids` | Bad scenario preset name or custom edge id |
+| 404 | `scenario_not_found` | Closures requested for a scenario id that has not been evaluated |
+| 422 | `optimization_failed` | Solver returned no solution (`details.status`, `solver_message`) |
+| 503 | `engine_busy` | More than 2 concurrent analysis jobs; retry |
 
 The API never substitutes fabricated values for missing data.
 
@@ -115,7 +120,104 @@ curl -s 'localhost:8000/api/v1/regions/houston-sw-pilot/facilities?category=libr
 curl -s 'localhost:8000/api/v1/regions/houston-sw-pilot/flood-hazards?sfha_only=true&simplify_m=10' | jq '.coverage'
 ```
 
+## Phase 2 analysis endpoints
+
+These are CPU-bound. Handlers are synchronous `def` functions, which FastAPI runs in its worker
+threadpool, so the event loop is never blocked. At most 2 jobs run concurrently (otherwise 503
+`engine_busy`), solves are time-limited (≤ 120 s), and results are LRU-cached by a hash of the request and
+the data stamp (`"cache": "hit" | "miss"`). All request models reject unknown fields and enforce the bounds
+defined in `backend/app/engine/params.py`.
+
+A `scenario` field accepts a preset name (`"baseline"`, `"moderate"`, `"severe"`) or a full `ScenarioSpec`:
+
+```json
+{"name": "custom", "seed": 2017, "one_pct_closure_prob": 0.8, "point_two_pct_closure_prob": 0.0,
+ "min_exposed_m": 10, "overbank_buffer_m": 100, "overbank_closure_prob": 0.2,
+ "unknown_coverage_policy": "no_inference", "unknown_closure_prob": 0.0,
+ "custom_closed_edge_ids": ["<edge_id>", "..."]}
+```
+
+Shared parameter blocks (all optional; defaults shown by `GET /methodology`):
+
+| Block | Fields |
+| --- | --- |
+| `demand` | `participation_rate` [0,1] = 0.5, `persons_in_4plus_households` [4,8] = 4.5, `origin_cell_m` [200,2000] = 500 |
+| `weights` | `mode` `equity`\|`equal`, `beta_poverty` = 0.5, `beta_disability` = 0.5, `beta_age65` = 0 |
+| `access` | `walk_max_m` [100,2000] = 800, `drive_thresholds_min` = [10,20,30], `shelter_categories` = ["community_centre"], `exclude_shelters_in_1pct_zone` = true |
+| `resources` | `max_active_hubs` = 12, `vehicles` = 15, `vehicle_capacity` = 40, `horizon_min` = 480, `dwell_min` = 10, `hub_capacity` = 600, `shelter_capacity` = 400, `shelters_per_hub` = 4 |
+| `solver` | `time_limit_s` (0,120] = 30, `mip_rel_gap` = 0.005, `integer_trips` = true, `walk_cost_weight` = 0.01, `drive_cost_weight` = 0.01, `hub_activation_cost` = 0.1 |
+
+### `GET /api/v1/regions/{id}/scenarios`
+Presets: `[{name, description, spec}]`.
+
+### `POST /api/v1/regions/{id}/scenarios/evaluate`
+Body: `{scenario, access?, include_closures_geojson? (≤ 2000 features)}`. Response (`ScenarioEvaluation`):
+
+- `scenario_id` (`scn_` + 16 hex digits, deterministic)
+- `closures`: `{closed_directed_edges, closed_segments, closed_length_km, closed_segments_by_rule,
+  unknown_coverage_segments, unknown_coverage_length_km, unknown_coverage_policy}`
+- `network`: `{baseline, scenario}` component statistics
+- `access_change`: origins and demand losing drive routes, mean and p90 drive-time change, shelters
+  reachable within the threshold, hubs with a shelter route
+- `speed_model`, `timings_s`, `provenance`, `disclaimer`
+
+### `GET /api/v1/regions/{id}/scenarios/{scenario_id}/closures?limit&offset`
+GeoJSON of closed segments (one feature per segment, both directions closed), `evidence_type: simulated`.
+The scenario must have been evaluated in this server process (404 otherwise).
+
+### `POST /api/v1/regions/{id}/accessibility/analyze`
+Body: `{scenario, demand?, access?, include_geometry? = true, simplify_m? = 20}`. Response: a GeoJSON
+FeatureCollection of tracts, plus `summary` (baseline vs scenario demand-weighted shares, disconnected
+tracts, access-loss totals), `units` and `method_notes`. Per-tract properties are listed in
+ACCESSIBILITY_METHODS.md. Unreachable values are `null`.
+
+### `POST /api/v1/regions/{id}/demand`
+Body: `{params?: DemandParams, weights?: EquityWeights}`. Returns per-tract observed counts, estimated
+persons and demand, ranks and weights, a 4×3 sensitivity grid, and definitions separating observed,
+estimated and priority fields.
+
+### `POST /api/v1/regions/{id}/optimize`
+Body: `OptimizeRequest {scenario, demand, weights, access, resources, solver, include_geometry}`.
+Response (`OptimizationResult`):
+
+- `totals`: `demand_est, served, served_via_hubs, served_by_direct_walk_to_shelter, unmet, coverage,
+  weighted_unmet_run_weights, weighted_unmet_equity_weights, weighted_coverage_equity_weights, active_hubs,
+  vehicle_trips, vehicle_minutes_used/available, fleet_utilization, mean_walk_m_served_via_hub,
+  mean_bus_drive_min, mean_seat_occupancy`
+- `binding_constraints`: hub budget, hubs and shelters at capacity, fleet binding, demand with no walkable
+  hub or shelter
+- `distribution_by_priority_tercile`: `tercile_1` (lowest priority) to `tercile_3`, each with demand,
+  served and coverage
+- `hubs[]`: activated hubs with `legs[] {shelter_id, persons, trips, drive_min, round_trip_min}`
+- `shelters[]`, `tracts[]`, `tracts_geojson`, `hubs_geojson`
+- `solver`: `{status, mip_gap, dual_bound, objective, solve_seconds, model_size, screening,
+  optimality_claim}`
+- `constraint_check`: independent recomputation of every constraint
+- `assumptions`, `disclaimer`
+
+### `POST /api/v1/regions/{id}/compare`
+Body: `CompareRequest {disrupted_scenario, demand, weights, access, resources, solver,
+include_robustness_case}`. Response: `cases[]`:
+
+- `baseline_no_intervention`
+- `disrupted_no_intervention`
+- `disrupted_equity_optimized`
+- `disrupted_equal_weight_optimized`
+- `baseline_plan_under_disruption` (optional)
+
+Each case has totals, terciles, binding constraints, solver status and active hub ids. The response also
+includes `deltas` (exact differences), `findings` (generated text that reports a zero gain as zero),
+`accessibility_change`, `most_affected_tracts` and `identical_inputs`.
+
+### `GET /api/v1/regions/{id}/methodology`
+Units, speed table, every default, scenario presets, the objective and constraint list, and the
+equity-weight formula.
+
+### `GET /api/v1/regions/{id}/demo`
+The reproducible demonstration: `{title, story[], request, reproduce, result: ComparisonResult}`. See
+PHASE2_RESULTS.md.
+
 ## Stability for Phase 2
 
-Paths, parameter names and response field names under `/api/v1` are the Phase 2 contract. New fields may
+Paths, parameter names and response field names under `/api/v1` are the contract for Phase 2 and Phase 3. New fields may
 be added. Breaking changes require `/api/v2`.

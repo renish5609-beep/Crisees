@@ -18,6 +18,7 @@ from app.datasets import DATASETS, update_manifest_entry, utc_now
 from pipeline.context import PipelineContext
 from pipeline.http import SourceUnavailableError, read_sidecar
 from pipeline.processing import demographics as demo_proc
+from pipeline.processing import exposure as exp_proc
 from pipeline.processing import facilities as fac_proc
 from pipeline.processing import flood as flood_proc
 from pipeline.processing import roads as road_proc
@@ -30,7 +31,7 @@ from app.services.road_graph import graph_to_tables
 
 logger = logging.getLogger("crisees.pipeline")
 
-STEPS = ("tracts", "acs", "svi", "flood", "roads", "facilities")
+STEPS = ("tracts", "acs", "svi", "flood", "roads", "facilities", "derived")
 
 
 class StepReport(dict):
@@ -76,6 +77,8 @@ def download(ctx: PipelineContext, steps: tuple[str, ...] = STEPS, road_provider
     run("flood", lambda: fema.download_flood(ctx, bbox))
     run("roads", lambda: road_src.download_roads(ctx, bbox, road_provider))
     run("facilities", lambda: fac_src.download_facilities(ctx, bbox, facility_provider))
+    if "derived" in steps:
+        reports.append(StepReport(step="derived", status="ok", result="no download needed (built from other sources)"))
     return reports
 
 
@@ -270,10 +273,48 @@ def process(ctx: PipelineContext, steps: tuple[str, ...] = STEPS) -> list[StepRe
                       f"{fac_proc.HUB_MAX_SNAP_M:.0f} m of the drivable network. Planning hypotheses only."])
         return {"facilities": len(gdf), "candidate_hubs": len(hubs)}
 
+    def do_derived() -> dict:
+        """Phase 2 inputs: zero-vehicle households by size; edge flood exposure."""
+        result: dict[str, Any] = {}
+        b_path = acs.table_path(ctx, "B08201")
+        if not b_path.exists():
+            raise FileNotFoundError(b_path)
+        meta = read_sidecar(b_path)
+        src = dict(meta.get("source", catalog.acs5(r.acs_year, "summary_file")))
+        src["retrieved_at"] = meta.get("retrieved_at")
+        va = exp_proc.vehicle_access(demo_proc.read_table(b_path), tracts_df()["geoid"].tolist(), src["source_id"])
+        _write(ctx, "vehicle_access", va, provenance="real", provider=meta.get("method"), sources=[src],
+               notes=["ACS B08201 lines 002 (all), 008/014/020/026 (1/2/3/4+ person households) with "
+                      "no vehicle available. Sentinels -> null."])
+        result["vehicle_access_tracts"] = len(va)
+        edges_path = ctx.processed / DATASETS["road_edges"].filename
+        hz_path = ctx.processed / DATASETS["flood_hazards"].filename
+        cov_path = ctx.processed / DATASETS["flood_coverage"].filename
+        if edges_path.exists() and hz_path.exists() and cov_path.exists():
+            edges = gpd.read_parquet(edges_path, columns=["edge_id", "geometry"])
+            hz = gpd.read_parquet(hz_path)
+            cov = gpd.read_parquet(cov_path)
+            exp = exp_proc.edge_flood_exposure(edges, hz, cov, r.analysis_crs)
+            hz_src = read_manifest_sources(ctx, "flood_hazards")
+            _write(ctx, "edge_flood_exposure", exp, provenance="derived", provider="crisees", sources=hz_src,
+                   notes=["Regulatory FEMA exposure of each directed road edge; NOT observed flooding.",
+                          "len_in_coverage_m < length_m means part of the edge has unknown flood status."],
+                   extra={"edges_touching_1pct": int((exp.len_in_1pct_m > 0).sum()),
+                          "edges_fully_in_coverage": int((exp.len_in_coverage_m >= exp.length_m - 0.5).sum())})
+            result["edges_touching_1pct"] = int((exp.len_in_1pct_m > 0).sum())
+        return result
+
     run("tracts", do_tracts)
     run("acs", do_acs)
     run("svi", do_svi)
     run("flood", do_flood)
     run("roads", do_roads)
     run("facilities", do_facilities)
+    run("derived", do_derived)
     return reports
+
+
+def read_manifest_sources(ctx: PipelineContext, key: str) -> list[dict]:
+    from app.datasets import read_manifest
+
+    return (read_manifest(ctx.processed) or {}).get("datasets", {}).get(key, {}).get("sources", [])

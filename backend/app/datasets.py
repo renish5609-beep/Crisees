@@ -88,6 +88,20 @@ DATASETS: dict[str, DatasetSpec] = {
             ("hazard_id", "flood_zone", "is_sfha", "geometry"),
         ),
         DatasetSpec(
+            "vehicle_access",
+            "vehicle_access.parquet",
+            "Zero-vehicle households by household size (ACS B08201)",
+            False,
+            ("geoid", "hh_no_vehicle", "hh_no_vehicle_1p", "hh_no_vehicle_4p_plus"),
+        ),
+        DatasetSpec(
+            "edge_flood_exposure",
+            "edge_flood_exposure.parquet",
+            "Road-edge exposure to FEMA flood zones and data coverage (derived)",
+            False,
+            ("edge_id", "len_in_1pct_m", "len_in_0_2pct_m", "len_in_coverage_m"),
+        ),
+        DatasetSpec(
             "flood_coverage",
             "flood_coverage.parquet",
             "Extent of ingested FEMA FIRM panels",

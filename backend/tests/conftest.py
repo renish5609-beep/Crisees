@@ -13,6 +13,19 @@ from app.services.repository import DataRepository
 from tests.fixtures.synthetic import write_synthetic_region
 
 
+@pytest.fixture(autouse=True)
+def _isolate_engine_caches():
+    """Engine/scenario/result caches are process-global; reset per test."""
+    from app.engine import service
+    from app.engine.context import clear_engines
+
+    clear_engines()
+    service.clear_caches()
+    yield
+    clear_engines()
+    service.clear_caches()
+
+
 @pytest.fixture
 def data_dir(tmp_path: Path) -> Path:
     (tmp_path / "raw").mkdir()

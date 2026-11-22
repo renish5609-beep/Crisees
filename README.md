@@ -9,12 +9,12 @@ emergency dispatch system.
 
 ![Workspace showing the study area's census tracts and FEMA floodplain](docs/img/workspace.png)
 
-## Status: Phase 1 (foundation and data infrastructure)
+## Status
 
 | Phase | Scope | State |
 | --- | --- | --- |
 | 1 | Monorepo, FastAPI backend, real-data pipeline, data model, API, Next.js shell | **Done** |
-| 2 | Accessibility metrics, flood-disruption scenarios, hub optimisation | Not started |
+| 2 | Routing, demand, flood-disruption scenarios, accessibility, equity MILP, counterfactuals | **Done** |
 | 3 | Planner-facing dashboard and map UI | Not started |
 
 Pilot region: **`houston-sw-pilot`**, 151 census tracts (110 in Harris County, 41 in Fort Bend County),
@@ -61,6 +61,9 @@ Add `--force` to refresh, or `--only roads facilities` to fetch a subset. Each s
 providers and falls back automatically (for example OSMnx/Overpass, then Overture Maps for roads). The
 provider actually used is recorded in `data/processed/<region>/manifest.json`.
 
+Phase 2 adds a `derived` step (vehicle access by household size, road flood exposure), which
+`process_data.py` runs automatically.
+
 ### 3. Run the API
 
 ```bash
@@ -85,7 +88,8 @@ Open http://localhost:3000. The status pill in the top bar shows whether the API
 ## Tests and checks
 
 ```bash
-cd backend && python -m pytest          # 97 tests; real-data checks skip if data not generated
+cd backend && python -m pytest          # 155 tests; real-data checks skip if data not generated
+python scripts/benchmark_phase2.py       # Phase 2 timings + demonstration results
 cd frontend && npm run typecheck && npm run lint && npm run build
 ```
 
@@ -112,6 +116,21 @@ No secrets are required. Never commit `.env` files.
 - [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md): every source, license, retrieval method, fallback and limitation
 - [docs/DATA_DICTIONARY.md](docs/DATA_DICTIONARY.md): every processed dataset and field
 - [docs/API.md](docs/API.md): endpoint reference with examples
+- [docs/OPTIMIZATION_MODEL.md](docs/OPTIMIZATION_MODEL.md): MILP formulation, equity weights, solver settings
+- [docs/SCENARIO_ENGINE.md](docs/SCENARIO_ENGINE.md): hypothetical flood-closure rules, determinism
+- [docs/ACCESSIBILITY_METHODS.md](docs/ACCESSIBILITY_METHODS.md): routing, travel time, demand, accessibility
+- [docs/PHASE2_RESULTS.md](docs/PHASE2_RESULTS.md): demonstration scenario, numbers, performance
+
+## Phase 2 at a glance
+
+```bash
+curl -s localhost:8000/api/v1/regions/houston-sw-pilot/demo | jq '.result.findings'
+```
+
+In the severe hypothetical scenario, 12 optimized pickup hubs and 15 vehicles raise modelled assisted
+evacuation from 5,214 to 9,493 of 23,033 estimated persons. 8,790 persons have no hub or shelter within
+800 m, which limits what any allocation can do. Every solution is verified against all constraints. See
+[docs/PHASE2_RESULTS.md](docs/PHASE2_RESULTS.md).
 
 ## Known limitations (summary)
 

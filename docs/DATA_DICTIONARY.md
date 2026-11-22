@@ -210,3 +210,28 @@ social_service_organization → social_facility.
 
 `manifest.datasets.flood_coverage.extra` holds `covered_area_fraction` (0.5229), `dfirm_ids`,
 `panel_count` and `method`.
+
+## vehicle_access.parquet · real (Phase 2 input)
+
+| Field | Type | Description |
+| --- | --- | --- |
+| geoid | str | Tract |
+| hh_no_vehicle (+_moe) | int | B08201_002: households with no vehicle |
+| hh_no_vehicle_1p / _2p / _3p / _4p_plus (+_moe) | int | B08201_008 / 014 / 020 / 026: no-vehicle households of 1, 2, 3 and 4+ persons |
+| size_cells_consistent | bool? | Size cells sum to the total (true for all 151 pilot tracts) |
+
+## edge_flood_exposure.parquet · derived (Phase 2 input)
+
+One row per directed edge, in the same order and with the same `edge_id` as `road_edges`. Lengths are in
+metres (EPSG:32615).
+
+| Field | Description |
+| --- | --- |
+| length_m | Edge length |
+| len_in_1pct_m | Length inside FEMA 1%-annual-chance zones (regulatory exposure, **not** observed flooding) |
+| len_in_0_2pct_m | Length inside 0.2%-annual-chance zones |
+| len_in_coverage_m | Length inside ingested FEMA coverage; less than length_m means part of the edge has unknown status |
+| dist_to_1pct_m | Distance to the nearest 1% polygon, capped at 1 km (NaN beyond) |
+
+Phase 2 analysis outputs (scenarios, accessibility, optimization) are computed on request and returned by
+the API. They are not stored as datasets. See API.md.

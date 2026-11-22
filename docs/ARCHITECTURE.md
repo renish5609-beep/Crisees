@@ -89,7 +89,45 @@ Next.js 15 App Router, TypeScript and Tailwind v4, with the Public Sans typeface
 - **`src/lib/api.ts`.** A typed client with timeouts and structured `ApiError`s. `src/lib/types.ts`
   mirrors the backend schemas.
 
-## How Phase 2 should consume the data
+## Phase 2 analysis engine (`backend/app/engine/`)
+
+```
+params.py         bounded request models (scenario, demand, weights, access, resources, solver)
+network.py        Engine A: immutable array graph, CSR matrices per closure mask, SciPy Dijkstra
+demand.py         Engine B: zero-vehicle demand, sub-tract origins, priority weights, sensitivity
+context.py        per-region cache: datasets, network, origins, shelter/hub sets with flood status
+scenarios.py      Engine C: deterministic hypothetical closures, presets, scenario ids
+accessibility.py  Engine D: cached scenario states (walk/drive matrices), tract metrics, deltas
+optimization.py   Engine E: MILP (HiGHS via scipy.optimize.milp) + independent constraint verification
+service.py        Engine F (compare) + payload shaping, LRU result cache, job limiter, demo
+api/v1/routes/analysis.py   POST endpoints (sync handlers run in the threadpool)
+```
+
+Data flow: the Phase 1 datasets plus `vehicle_access` and `edge_flood_exposure` (the pipeline step
+`derived`) feed `RegionEngine` (built once, about 1 s). A scenario spec yields a closure mask, which yields
+a `ScenarioState` with walk and drive matrices (cached per scenario and access parameters, 1–1.5 s). That
+state feeds accessibility tables and the MILP inputs; solving takes under 1 s, and verification follows.
+`compare` runs up to 5 solves with identical inputs.
+
+Caches are keyed by the data stamp (`manifest.generated_at`), so rerunning the pipeline invalidates them.
+Methods and numbers are documented in OPTIMIZATION_MODEL.md, SCENARIO_ENGINE.md, ACCESSIBILITY_METHODS.md
+and PHASE2_RESULTS.md.
+
+## How Phase 3 should consume the engine
+
+- Map layers:
+  - tracts: `POST /accessibility/analyze` (FeatureCollection with baseline, scenario and delta properties);
+  - closures: `GET /scenarios/{id}/closures`;
+  - hubs: `hubs_geojson` from `/optimize`;
+  - flood zones and coverage: `GET /flood-hazards`.
+- Scenario picker: `GET /scenarios`. Use custom specs for sliders; every result carries a deterministic
+  `scenario_id`.
+- Resource sliders: `POST /optimize` (about 0.6–1 s warm). Show `solver.status`, `optimality_claim`,
+  `binding_constraints` and `constraint_check.feasible`.
+- Before/after story: `GET /demo` or `POST /compare`. Always display the `disclaimer` and the FEMA coverage
+  caveat.
+
+## How Phase 2 consumed the Phase 1 data (historical)
 
 1. Load data through `DataRepository` (or directly with `geopandas.read_parquet` from
    `data/processed/<region>/`), and check `manifest.json` provenance and coverage before you trust a dataset.

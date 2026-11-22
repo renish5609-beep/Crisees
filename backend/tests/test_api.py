@@ -74,7 +74,7 @@ def test_roads_bad_bbox(client):
 
 def test_facilities_and_hubs(client):
     body = client.get(f"{R}/facilities").json()
-    assert body["page"]["total"] == 3
+    assert body["page"]["total"] == 4
     assert all(f["properties"]["verification_status"] == "mapped_unverified" for f in body["features"])
     lib = client.get(f"{R}/facilities", params={"category": "library"}).json()
     assert [f["properties"]["name"] for f in lib["features"]] == ["Synthetic Library"]
