@@ -1,120 +1,108 @@
 # Deployment
 
-Target: the frontend on **Vercel** (Next.js) and the API on **Render** (Docker). Any Docker host with about
-1 GB of RAM works for the API.
+## Live deployment
 
-**Status:** deployment configurations are complete and were tested locally: the entrypoint, data
-provisioning, CORS and the production frontend build. A live public deployment has **not** been verified.
-The build environment had no Render (or other container host) credentials, no Docker daemon, and no
-permission to create GitHub Release assets. The steps below are what remains.
+| Component | URL | Host |
+| --- | --- | --- |
+| Web app (Next.js) | https://crisees-drea7.vercel.app | Vercel project `crisees`, root `frontend/` (Hobby plan, free) |
+| API (FastAPI) | https://crisees-api-drea7.vercel.app | Vercel project `crisees-api`, root `backend/`, Python function (Hobby plan, free) |
+| Data release | https://github.com/renish5609-beep/Crisees/releases/tag/data-v1 | GitHub Release `data-v1` |
 
-## 1. Publish the data release (once per data version)
+Both projects deploy automatically from branch `claude/sleepy-cori-ki2xgv`, which is the repository's
+default branch. Deployment protection is off so judges can open the app without a Vercel login.
 
-Processed data (about 27 MB) is Git-ignored. Build an immutable, checksummed artifact:
+Verified in production on 2026-11-22:
+
+- `/health` returns `regions_with_processed_data: 1` in the `production` environment.
+- `/demo` returns all five comparison cases with feasible constraint checks.
+- 18 endpoints returned 200.
+- CORS allows the app's origin and rejects unknown origins.
+- `npm run e2e` passes against both live URLs (see RELEASE_CHECKLIST.md).
+
+**Cost.** No paid services are used. Render was evaluated, but it requires a payment method, so it was not
+created.
+
+## How the API fits on Vercel
+
+Vercel's standard Python function size is **250 MB uncompressed**. Above that, dependencies are installed
+at runtime into `/tmp`, which fails for this stack. The API's geospatial dependencies total about 550 MB,
+so the backend build does the following:
+
+1. **Lean core dependencies.** `backend/pyproject.toml` core dependencies are only what the API imports.
+   The pipeline extras (OSMnx, pyogrio, requests) and the `server` extra (uvicorn) are separate. Docker
+   and local development install `.[dev]`, or `.[pipeline,server]` for Docker.
+2. **Build hook.** `backend/vercel_build.py` runs via `[tool.vercel.scripts] build`, after dependencies
+   are installed. It only acts when `VERCEL=1`, and only on `.vercel/python/.venv`.
+   - It downloads the data release from `CRISEES_DATA_URL` and verifies `CRISEES_DATA_SHA256`; on a
+     mismatch the build fails.
+   - It reads each dataset with pyarrow, which is lossless, converts Arrow-backed strings and labels to
+     plain Python objects, refuses any pickle that still references pyarrow, and writes gzip pickles to
+     `backend/data_bundle/processed/<region>/` (18.7 MB).
+   - It removes pyarrow, pyogrio, unused scipy subpackages and test suites from the virtualenv. In the
+     local rehearsal this took the packages from 398 MB to 239 MB.
+3. **Runtime.** `CRISEES_DATA_DIR=data_bundle`. The repository loads `.pkl.gz` files when present and
+   Parquet otherwise, so local and Docker behaviour are unchanged. A rehearsal with pyarrow imports
+   blocked returned 200 from every endpoint, with identical demo numbers.
+
+API environment variables (project `crisees-api`, Production and Preview):
+
+| Variable | Value |
+| --- | --- |
+| `CRISEES_ENV` | `production` |
+| `CRISEES_DATA_DIR` | `data_bundle` |
+| `CRISEES_DATA_URL` | `https://github.com/renish5609-beep/Crisees/releases/download/data-v1/crisees-data-houston-sw-pilot-20261122T002055Z.tar.gz` |
+| `CRISEES_DATA_SHA256` | `0fe0e8e3d03c2f3a66b03c6917c6f48ceb348d455a3404da0e7d7e018ebc69eb` |
+| `CRISEES_CORS_ORIGINS` | `https://crisees-drea7.vercel.app,http://localhost:3000` |
+| `CRISEES_CORS_ORIGIN_REGEX` | `^https://crisees[a-z0-9-]*\.vercel\.app$` (preview URLs) |
+
+Frontend environment variables (project `crisees`):
+
+| Variable | Value |
+| --- | --- |
+| `NEXT_PUBLIC_API_BASE_URL` | `https://crisees-api-drea7.vercel.app` |
+| `NEXT_PUBLIC_DEFAULT_REGION` | `houston-sw-pilot` |
+| `NEXT_PUBLIC_BASEMAP_TILES` | `none`. External raster tiles are opt-in: CARTO's free tiles now require an API key and rendered "API KEY REQUIRED" in production. The map uses its self-hosted major-roads layer for context |
+
+**Cold starts.** After idle periods the first request starts a new function instance, which loads the
+bundled data and builds the routing engine. The first `/demo` takes about 10–12 s. Later requests on a
+warm instance are served from the cache in milliseconds. Before presenting, open the app once to warm it.
+
+## Data release (immutable, checksummed)
+
+Processed data is Git-ignored. Release `data-v1` holds:
+
+- `crisees-data-houston-sw-pilot-20261122T002055Z.tar.gz`: 22,107,830 bytes, SHA-256
+  `0fe0e8e3d03c2f3a66b03c6917c6f48ceb348d455a3404da0e7d7e018ebc69eb`. It contains processed datasets
+  and `ATTRIBUTION.md`, with the ODbL and CDLA notices.
+- The matching `.sha256` file.
+
+Both assets were verified publicly downloadable, and the checksum was independently recomputed.
+
+For a new data version, run `python scripts/package_data_release.py`, publish a new release tag, and
+update `CRISEES_DATA_URL` and `CRISEES_DATA_SHA256`. The next deployment bundles the new data.
+
+## Redeploying
+
+Push to `claude/sleepy-cori-ki2xgv`. Both Vercel projects build automatically: about 1 minute for the
+frontend and 1–2 minutes for the API.
+
+## Alternative: Docker host (Render, Fly.io, Cloud Run)
+
+`backend/Dockerfile`, `backend/docker-entrypoint.sh` and `render.yaml` remain available for a
+long-running server (about 1 GB RAM). The entrypoint fetches and verifies the same release at start.
+Render's Standard plan costs about $25/month plus disk; it was not used. See the git history for the
+earlier Render instructions.
+
+## Verifying a deployment
 
 ```bash
-python scripts/package_data_release.py --region houston-sw-pilot
+curl https://crisees-api-drea7.vercel.app/health
 ```
-
-This produces `dist/crisees-data-houston-sw-pilot-<stamp>.tar.gz` and its `.sha256` file. The artifact
-contains processed data plus `ATTRIBUTION.md`, which covers ODbL for the OSM-derived road tables and
-CDLA-Permissive-2.0 for Overture places.
-
-Artifact built in this environment:
-
-| File | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `crisees-data-houston-sw-pilot-20261122T002055Z.tar.gz` | 22,107,830 | `0fe0e8e3d03c2f3a66b03c6917c6f48ceb348d455a3404da0e7d7e018ebc69eb` |
-
-Upload it as a GitHub Release asset (immutable, public):
-
 ```bash
-gh release create data-v1 dist/crisees-data-houston-sw-pilot-*.tar.gz dist/*.sha256 \
-  --repo renish5609-beep/Crisees --title "Crisees data v1 (houston-sw-pilot)" \
-  --notes "Processed datasets for the Crisees API. See ATTRIBUTION.md inside."
+curl https://crisees-api-drea7.vercel.app/api/v1/regions/houston-sw-pilot/demo | jq '.result.cases[] | {case, served: .totals.served}'
 ```
-
-The asset URL has this form:
-`https://github.com/renish5609-beep/Crisees/releases/download/data-v1/crisees-data-houston-sw-pilot-20261122T002055Z.tar.gz`
-
-## 2. Deploy the API on Render
-
-1. Render dashboard → **New → Blueprint** → select this repository and branch. `render.yaml` defines
-   `crisees-api`: a Docker service on the `standard` plan (2 GB), a health check on `/health`, and a 1 GB
-   disk at `/data`.
-2. Set the environment variables:
-
-   | Variable | Value |
-   | --- | --- |
-   | `CRISEES_DATA_URL` | The release asset URL from step 1 |
-   | `CRISEES_DATA_SHA256` | `0fe0e8e3d03c2f3a66b03c6917c6f48ceb348d455a3404da0e7d7e018ebc69eb` |
-   | `CRISEES_CORS_ORIGINS` | `https://<your-vercel-domain>` (comma-separated list allowed) |
-   | `CRISEES_CORS_ORIGIN_REGEX` | Optional, for previews, e.g. `^https://crisees-.*\.vercel\.app$` |
-
-3. Deploy. The entrypoint (`backend/docker-entrypoint.sh`) then does the following:
-   - It downloads the release, verifies the SHA-256 and refuses to install on a mismatch. It extracts
-     atomically, then validates all 12 datasets. On a persistent disk, a re-run with the same checksum is
-     a no-op.
-   - It starts uvicorn with one worker. The engine caches the road graph, about 1 GB per process.
-   - It warms the engine in the background (the severe scenario and the demo), so the first visitor gets
-     cached answers.
-4. Verify: `curl https://<api>/health` should return `"regions_with_processed_data": 1`.
-   `curl https://<api>/api/v1/regions/houston-sw-pilot/demo` should return the five comparison cases.
-
-**Fallbacks.**
-
-- If `CRISEES_DATA_URL` is unset and `CRISEES_BUILD_DATA=1`, the container rebuilds data from public
-  sources. This takes about 5 minutes and needs about 2 GB RAM. Pin `CRISEES_OVERTURE_RELEASE=2026-11-18.0`
-  for reproducibility. Overture removes old releases after a few months, and official FEMA and CDC sources
-  may yield *more complete* data than the documented build, so the numbers may differ.
-- With no data at all, the API still starts. `/health` reports `regions_with_processed_data: 0` and the
-  data endpoints return 503 `dataset_not_available` with instructions. The frontend shows
-  "API up, data not provisioned".
-
-**Robustness.**
-
-- **Container restarts:** the disk keeps the data, and the checksum marker skips re-download.
-- **Cold start:** about 4 s to build the engine, absorbed by the warm-up.
-- **Solver limits:** each solve is time-limited to 30 s by default and 120 s at most, and at most 2
-  analysis jobs run concurrently (otherwise 503 `engine_busy`).
-- **Caching:** results are LRU-cached by request hash.
-
-Without Docker, you can run the image's steps directly:
-
 ```bash
-pip install ./backend && python scripts/fetch_data_release.py && uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port $PORT
+cd frontend && APP_URL=https://crisees-drea7.vercel.app API_URL=https://crisees-api-drea7.vercel.app npm run e2e
 ```
 
-**Memory note:** Render's free and starter plans (512 MB) are too small. The process uses about 1 GB once
-warm, so choose `standard` or larger.
-
-## 3. Deploy the frontend on Vercel
-
-1. Vercel → **Add New → Project** → import `renish5609-beep/Crisees`. Set **Root Directory** to
-   `frontend`. The framework (Next.js) is auto-detected.
-2. Environment variables (Production and Preview):
-
-   | Variable | Value |
-   | --- | --- |
-   | `NEXT_PUBLIC_API_BASE_URL` | `https://<your-render-service>.onrender.com` (no trailing slash; **required**) |
-   | `NEXT_PUBLIC_DEFAULT_REGION` | `houston-sw-pilot` |
-   | `NEXT_PUBLIC_BASEMAP_TILES` | Optional; default CARTO dark (no labels). Check the tile provider's terms for your traffic |
-
-   Without `NEXT_PUBLIC_API_BASE_URL`, a production build shows a clear "not configured" error. It never
-   falls back to localhost.
-3. Deploy, then add the Vercel domain to `CRISEES_CORS_ORIGINS` on Render and redeploy the API.
-4. Verify:
-   - Open the site. The status pill reads "API connected".
-   - **Run guided demo** completes all 8 steps.
-   - Optional: `APP_URL=https://<vercel> API_URL=https://<api> npm run e2e` from `frontend/`.
-
-## 4. Alternative hosts
-
-- **Fly.io / Railway / Google Cloud Run:** use `backend/Dockerfile` with the same environment variables
-  and at least 1 GB of memory. On Cloud Run, set `--memory 2Gi --cpu 2 --concurrency 4`, and either set
-  min-instances to 1 or accept cold starts of about 10 s, including the data download.
-- **Bake data into the image:** pass `--build-arg CRISEES_DATA_URL=… --build-arg CRISEES_DATA_SHA256=…`.
-
-## Secrets
-
-None are required. The Census API key is optional and unused in deployment. Do not commit `.env` files.
+Node's built-in `fetch` ignores proxy variables; behind a proxy, add `NODE_USE_ENV_PROXY=1`.

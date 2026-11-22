@@ -7,6 +7,9 @@ network analysis and mathematical optimization to help planners see where commun
 reach evacuation assistance during a flood. It simulates hypothetical flood-related road disruptions and
 tests how limited pickup hubs, vehicles and shelter space could be allocated.
 
+**Live app:** https://crisees-drea7.vercel.app · **API:** https://crisees-api-drea7.vercel.app/docs ·
+**Data release:** [data-v1](https://github.com/renish5609-beep/Crisees/releases/tag/data-v1)
+
 > Crisees is a research and planning prototype. It is not an emergency warning, evacuation order, verified
 > shelter directory, or dispatch service.
 
@@ -114,9 +117,10 @@ The browser test checks that the numbers the UI displays match direct API respon
 
 ## Deployment
 
-The backend runs as a Docker service (Render blueprint in `render.yaml`, about 1 GB RAM). Data is
-provisioned at startup from a versioned, SHA-256-verified release artifact, so no datasets are stored in
-Git. The frontend deploys to Vercel with `NEXT_PUBLIC_API_BASE_URL` set. See
+Both parts run on Vercel's free Hobby plan: the Next.js app and the FastAPI backend as a Python function.
+At build time the API verifies the SHA-256 of the published data release, bundles it without pyarrow,
+and prunes unused libraries to fit the function size limit. No datasets are stored in Git. A Docker
+setup (`backend/Dockerfile`, `render.yaml`) remains for long-running hosts. See
 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Data provenance
@@ -149,4 +153,4 @@ documented mirrors and fallbacks were used. See [docs/DATA_SOURCES.md](docs/DATA
 
 Contains U.S. Census Bureau TIGER/Line and ACS data, CDC/ATSDR SVI data and FEMA flood hazard data.
 It also contains OpenStreetMap data (© OpenStreetMap contributors, ODbL 1.0) and Overture Maps data
-(CDLA-Permissive-2.0). Basemap tiles © CARTO.
+(CDLA-Permissive-2.0).

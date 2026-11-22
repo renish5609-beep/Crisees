@@ -1,7 +1,11 @@
 # Demo video script (≤ 3 minutes)
 
-**Setup:** desktop browser at 1440×900 with the app open on **Overview** and the status pill reading
-"API connected". The backend has been warmed, which the deployment entrypoint does automatically.
+**Setup:** desktop browser at 1440×900 with https://crisees-drea7.vercel.app open on **Overview** and the
+status pill reading "API connected".
+
+**Warm up first:** the API is serverless, and its first request after an idle period takes about 10 s.
+Click through the guided demo once before recording; later runs come from the server cache and respond
+almost instantly.
 
 Numbers below are the reference values from the deterministic demo (severe scenario, seed 2017, default
 budget). The app fetches them live; if they ever differ, say what is on screen.

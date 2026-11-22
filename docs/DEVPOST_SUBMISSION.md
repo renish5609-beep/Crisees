@@ -1,5 +1,17 @@
 # Devpost submission: Crisees
 
+Draft for your review. **Do not submit until the demo video link is added and you approve.**
+
+| Field | Value |
+| --- | --- |
+| Project title | Crisees |
+| Tagline | Find the gaps. Plan the response. |
+| Public application | https://crisees-drea7.vercel.app |
+| API (for judges) | https://crisees-api-drea7.vercel.app/docs |
+| GitHub repository | https://github.com/renish5609-beep/Crisees |
+| Demo video | **PENDING: being recorded separately by the team; add the link before submitting** |
+| Screenshots | `docs/img/` (real captures of the live production app) |
+
 **Tagline:** Find the gaps. Plan the response.
 
 **Track:** EvoHacks II: Projects for Social Good
@@ -76,6 +88,9 @@ shifts coverage toward higher-poverty, higher-disability neighbourhoods. The app
   add people to demand.
 - **Correctness traps.** Building a sparse matrix silently summed parallel road edges, and we caught it in
   testing. "Reaching a pickup point" had to be separated from "being evacuated" in the model.
+- **Free serverless deployment.** The geospatial Python stack is about 550 MB, more than twice Vercel's
+  250 MB function limit. At build time we verify the checksummed data release, convert it to a
+  pyarrow-free bundle, and prune unused libraries, then re-ran every endpoint with pyarrow blocked.
 
 ## Accomplishments we're proud of
 
@@ -103,7 +118,7 @@ would. We also learned how much rigor it takes to make public data say only what
 ## Built with
 
 Python, FastAPI, Pydantic, GeoPandas, Shapely, SciPy (HiGHS), NetworkX, OSMnx, PyArrow, Next.js,
-TypeScript, Tailwind CSS, MapLibre GL JS, Recharts, Lucide, zod, Vitest, Playwright, Docker.
+TypeScript, Tailwind CSS, MapLibre GL JS, Recharts, Lucide, zod, Vitest, Playwright, Vercel, GitHub Releases.
 
 ## Responsible use
 
@@ -117,6 +132,9 @@ shelter directory or dispatch service.
 
 ## Links
 
+- Live app: https://crisees-drea7.vercel.app. Open it once before judging: the first request after an idle
+  period wakes the serverless API, about 10 s.
+- API docs: https://crisees-api-drea7.vercel.app/docs
 - Code: https://github.com/renish5609-beep/Crisees
-- Live app: *add after deployment (see docs/DEPLOYMENT.md)*
-- Demo video: *add after recording (see docs/DEMO_SCRIPT.md)*
+- Data release: https://github.com/renish5609-beep/Crisees/releases/tag/data-v1
+- Demo video: **pending (being recorded separately)**
