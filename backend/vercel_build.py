@@ -16,10 +16,18 @@ import glob
 import os
 import shutil
 import site
+import sys
 import sysconfig
+
+BUNDLE_DIR = "data_bundle"  # CRISEES_DATA_DIR on Vercel (relative to backend/)
 
 TARGETS = [
     "pyogrio", "pyogrio.libs", "pyogrio-*.dist-info",
+    # pyarrow is only needed to read Parquet; the bundle ships pickles instead.
+    "pyarrow", "pyarrow-*.dist-info",
+    # scipy subpackages the API never imports (it uses sparse, csgraph, spatial, optimize, linalg, special).
+    "scipy/stats", "scipy/io", "scipy/signal", "scipy/interpolate", "scipy/integrate", "scipy/ndimage",
+    "scipy/odr", "scipy/misc", "scipy/datasets", "scipy/cluster", "scipy/fftpack",
     "pandas/tests", "pyarrow/tests", "pyarrow/include", "scipy/*/tests", "scipy/*/*/tests",
     "numpy/*/tests", "networkx/*/tests", "shapely/tests",
     "pyarrow/libarrow_flight.so*", "pyarrow/_flight*.so",
@@ -46,10 +54,58 @@ def size_mb(path: str) -> float:
     return total / 1e6
 
 
+def bundle_data() -> None:
+    """Install the checksum-verified data release and convert it to pickles
+    (no pyarrow needed at runtime). Arrow-backed string columns become plain
+    Python objects first so unpickling never imports pyarrow."""
+    import gzip
+    import pickle
+    from pathlib import Path
+
+    sys.path.insert(0, os.getcwd())
+    import geopandas as gpd
+    import pandas as pd
+
+    from app.core.config import Settings
+    from app.regions import load_regions
+    from pipeline.release import install_release
+
+    url, sha = os.environ.get("CRISEES_DATA_URL"), os.environ.get("CRISEES_DATA_SHA256")
+    if not (url and sha):
+        print("[crisees build] CRISEES_DATA_URL/SHA256 not set; no data bundled")
+        return
+    settings = Settings(data_dir=Path(BUNDLE_DIR).resolve())
+    for region in load_regions():
+        dest = install_release(settings, region, url, sha)
+        total = 0
+        for f in sorted(dest.glob("*.parquet")):
+            try:
+                df = gpd.read_parquet(f)
+            except ValueError:  # no geometry column
+                df = pd.read_parquet(f)
+            for c in df.columns:
+                if c != "geometry" and pd.api.types.is_string_dtype(df[c]) and df[c].dtype != object:
+                    df[c] = df[c].astype(object)
+            # pandas 3 also backs string *labels* with pyarrow.
+            df.columns = pd.Index(list(df.columns), dtype=object)
+            if pd.api.types.is_string_dtype(df.index) and df.index.dtype != object:
+                df.index = pd.Index(list(df.index), dtype=object)
+            payload = pickle.dumps(df, protocol=5)
+            if b"pyarrow" in payload:
+                raise SystemExit(f"[crisees build] {f.name}: pickle still references pyarrow; refusing to bundle")
+            out = f.with_name(f.stem + ".pkl.gz")
+            with gzip.open(out, "wb", compresslevel=6) as fh:
+                fh.write(payload)
+            total += out.stat().st_size
+            f.unlink()
+        print(f"[crisees build] bundled {region}: {total / 1e6:.1f} MB of pickled datasets in {dest}")
+
+
 def main() -> None:
     if os.environ.get("VERCEL") != "1":
         print("[crisees build] not a Vercel build (VERCEL!=1); nothing pruned")
         return
+    bundle_data()
     dirs = site_dirs()
     if not dirs:
         print("[crisees build] project virtualenv not found; nothing pruned")

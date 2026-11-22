@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import gzip
 import logging
+import pickle
 import threading
 from pathlib import Path
 from typing import Any
@@ -50,7 +52,14 @@ class DataRepository:
         return [SourceAttribution(**s) for s in self.manifest_entry(region_id, key).get("sources", [])]
 
     def path(self, region_id: str, key: str) -> Path:
-        return self.region_dir(region_id) / DATASETS[key].filename
+        """Parquet file, or a pre-converted ``<name>.pkl.gz`` when present.
+
+        Pickles are produced only by our own Vercel build step from the
+        checksum-verified data release (see vercel_build.py), so the
+        serverless bundle can omit pyarrow. Never point this at untrusted files."""
+        base = self.region_dir(region_id) / DATASETS[key].filename
+        pkl = base.with_name(base.stem + ".pkl.gz")
+        return pkl if pkl.exists() else base
 
     def has(self, region_id: str, key: str) -> bool:
         return self.path(region_id, key).exists()
@@ -76,7 +85,11 @@ class DataRepository:
             if cached and cached[0] == mtime:
                 return cached[1]
         try:
-            df = gpd.read_parquet(path) if spec.spatial else pd.read_parquet(path)
+            if path.name.endswith(".pkl.gz"):
+                with gzip.open(path, "rb") as fh:
+                    df = pickle.load(fh)  # noqa: S301 - produced by our build from a verified release
+            else:
+                df = gpd.read_parquet(path) if spec.spatial else pd.read_parquet(path)
         except Exception as exc:  # pragma: no cover - defensive
             raise DatasetCorruptError(
                 f"Dataset '{key}' for region '{region_id}' could not be read.", dataset=key, error=str(exc)
